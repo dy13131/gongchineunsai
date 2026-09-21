@@ -1,0 +1,26 @@
+name: 공치는사이 알림
+on:
+  schedule:
+    - cron: "55 0 * * *"
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "테스트 알림 강제 발송 (1=보냄)"
+        default: "0"
+permissions:
+  contents: read
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install web-push@3
+      - run: node notify.js
+        env:
+          VAPID_PUBLIC:  "BLEamf01-GFetQRvW2LXvriOgGT8Qu6vIFkYlrtljUdTtKqgu7d5PBfYKvd_lkGBQUz8g-ZzHlzGWCexahyc2qs"
+          VAPID_PRIVATE: ${{ secrets.VAPID_PRIVATE }}
+          DB_URL: "https://tennis-534af-default-rtdb.firebaseio.com"
+          TEST: ${{ github.event.inputs.test }}
