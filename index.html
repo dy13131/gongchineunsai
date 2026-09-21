@@ -747,21 +747,27 @@ var GROUP_ID = "gongchineunsai"; // 모임 구분용 방 이름 (그대로 두�
   function pushSupported(){try{return ("Notification" in window)&&("serviceWorker" in navigator)&&window.firebase&&firebase.messaging&&firebase.messaging.isSupported();}catch(e){return false;}}
   function setPushBtn(on){var b=document.getElementById("pushBtn");if(!b)return;b.textContent=on?"🔔":"🔕";b.classList.toggle("push-on",!!on);}
   function saveToken(t){if(mode==="cloud"&&dbref&&t){dbref.child("pushTokens/"+t).set({ts:Date.now(),ua:(navigator.userAgent||"").slice(0,80)});}}
-  function enablePush(){
-    if(mode!=="cloud"){toast("온라인(공유) 상태에서 켤 수 있어요");return;}
-    if(!pushSupported()){toast("이 브라우저는 알림 미지원 (아이폰은 홈 화면에 추가 후)");return;}
-    if(!VAPID_KEY||VAPID_KEY.indexOf("여기에")===0){toast("알림 키가 아직 설정 안 됐어요");return;}
-    Notification.requestPermission().then(function(perm){
-      if(perm!=="granted"){toast("알림이 허용되지 않았어요");setPushBtn(false);return;}
-      navigator.serviceWorker.register("firebase-messaging-sw.js").then(function(reg){
-        var messaging=firebase.messaging();
-        messaging.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}).then(function(token){
-          if(token){saveToken(token);setPushBtn(true);toast("알림이 켜졌어요 🔔");try{localStorage.setItem(KEY+"-push","1");}catch(e){}
-            try{messaging.onMessage(function(p){var n=(p&&(p.notification||p.data))||{};toast((n.title||"알림")+(n.body?" — "+n.body:""));});}catch(e){}
-          }else{toast("알림 토큰을 못 받았어요");}
-        }).catch(function(){toast("알림 설정 실패 — 잠시 후 다시");});
-      }).catch(function(){toast("서비스워커 등록 실패");});
-    });
+  function pushErr(step,e){var msg=(e&&(e.message||e.code))||String(e||"");
+    try{alert("["+step+"] 실패\n\n"+msg+"\n\n(이 문구를 캡처해서 보내주세요)");}catch(_){}
+    toast(step+" 실패: "+msg);}
+  async function enablePush(){
+    try{
+      if(mode!=="cloud"){toast("온라인(공유) 상태에서 켤 수 있어요");return;}
+      if(!("Notification" in window)){pushErr("지원확인","이 브라우저에 Notification API가 없어요 (아이폰은 홈 화면에 추가한 앱에서 열어야 함)");return;}
+      if(!("serviceWorker" in navigator)){pushErr("지원확인","serviceWorker 미지원");return;}
+      if(!VAPID_KEY||VAPID_KEY.indexOf("여기에")===0){toast("알림 키 미설정");return;}
+      var sup=true; try{ sup=await firebase.messaging.isSupported(); }catch(e){ sup=false; }
+      if(!sup){pushErr("지원확인","이 브라우저는 FCM 웹푸시를 지원하지 않아요. (아이폰: 홈 화면에 추가 후 그 앱에서, iOS 16.4+ 필요)");return;}
+      var perm=await Notification.requestPermission();
+      if(perm!=="granted"){toast("알림 권한: "+perm);setPushBtn(false);return;}
+      var reg=await navigator.serviceWorker.register("firebase-messaging-sw.js");
+      var messaging=firebase.messaging();
+      var token=await messaging.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});
+      if(!token){pushErr("토큰","토큰이 비어서 왔어요");return;}
+      saveToken(token);setPushBtn(true);toast("알림이 켜졌어요 🔔");
+      try{localStorage.setItem(KEY+"-push","1");}catch(e){}
+      try{messaging.onMessage(function(p){var n=(p&&(p.notification||p.data))||{};toast((n.title||"알림")+(n.body?" — "+n.body:""));});}catch(e){}
+    }catch(e){ pushErr("알림설정",e); }
   }
   function pushInit(){
     var want=false;try{want=localStorage.getItem(KEY+"-push")==="1";}catch(e){}
