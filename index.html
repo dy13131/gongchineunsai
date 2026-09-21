@@ -317,7 +317,6 @@ img{max-width:100%}
 <!-- Firebase (실시간 공유용) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js"></script>
 
 <script>
 /* =========================================================================
@@ -743,30 +742,28 @@ var GROUP_ID = "gongchineunsai"; // 모임 구분용 방 이름 (그대로 두�
   (function(){var stored=null;try{stored=localStorage.getItem(KEY+"-theme");}catch(e){}
     document.documentElement.setAttribute("data-theme",stored||"dark");updThemeBtn();})();
 
-  // ---- 푸시 알림 (앱 꺼도 알림 오게) ----
-  function pushSupported(){try{return ("Notification" in window)&&("serviceWorker" in navigator)&&window.firebase&&firebase.messaging&&firebase.messaging.isSupported();}catch(e){return false;}}
-  function setPushBtn(on){var b=document.getElementById("pushBtn");if(!b)return;b.textContent=on?"🔔":"🔕";b.classList.toggle("push-on",!!on);}
-  function saveToken(t){if(mode==="cloud"&&dbref&&t){dbref.child("pushTokens/"+t).set({ts:Date.now(),ua:(navigator.userAgent||"").slice(0,80)});}}
+  // ---- 푸시 알림 (표준 웹푸시 — 앱 꺼도 알림 옴, 아이폰/안드 공용) ----
+  var VAPID_PUBLIC = "BLEamf01-GFetQRvW2LXvriOgGT8Qu6vIFkYlrtljUdTtKqgu7d5PBfYKvd_lkGBQUz8g-ZzHlzGWCexahyc2qs";
+  function pushSupported(){return ("Notification" in window)&&("serviceWorker" in navigator)&&("PushManager" in window);}
+  function setPushBtn(on){var b=document.getElementById("pushBtn");if(!b)return;b.textContent="🔔";b.classList.toggle("push-on",!!on);}
   function pushErr(step,e){var msg=(e&&(e.message||e.code))||String(e||"");
     try{alert("["+step+"] 실패\n\n"+msg+"\n\n(이 문구를 캡처해서 보내주세요)");}catch(_){}
     toast(step+" 실패: "+msg);}
+  function urlB64ToUint8Array(s){var pad="=".repeat((4-s.length%4)%4),b=(s+pad).replace(/-/g,"+").replace(/_/g,"/"),raw=atob(b),arr=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);return arr;}
+  function subKey(ep){var h=5381;for(var i=0;i<ep.length;i++){h=((h<<5)+h+ep.charCodeAt(i))>>>0;}return "s"+h.toString(36);}
+  function saveSub(sub){if(mode!=="cloud"||!dbref||!sub)return;var j=sub.toJSON?sub.toJSON():sub;if(!j||!j.endpoint)return;dbref.child("pushSubs/"+subKey(j.endpoint)).set({sub:j,ts:Date.now()});}
   async function enablePush(){
     try{
       if(mode!=="cloud"){toast("온라인(공유) 상태에서 켤 수 있어요");return;}
-      if(!("Notification" in window)){pushErr("지원확인","이 브라우저에 Notification API가 없어요 (아이폰은 홈 화면에 추가한 앱에서 열어야 함)");return;}
-      if(!("serviceWorker" in navigator)){pushErr("지원확인","serviceWorker 미지원");return;}
-      if(!VAPID_KEY||VAPID_KEY.indexOf("여기에")===0){toast("알림 키 미설정");return;}
-      var sup=true; try{ sup=await firebase.messaging.isSupported(); }catch(e){ sup=false; }
-      if(!sup){pushErr("지원확인","이 브라우저는 FCM 웹푸시를 지원하지 않아요. (아이폰: 홈 화면에 추가 후 그 앱에서, iOS 16.4+ 필요)");return;}
+      if(!pushSupported()){pushErr("지원확인","이 브라우저는 웹푸시 미지원이에요.\n아이폰은 '홈 화면에 추가'한 앱에서 열어야 하고 iOS 16.4+ 필요");return;}
       var perm=await Notification.requestPermission();
       if(perm!=="granted"){toast("알림 권한: "+perm);setPushBtn(false);return;}
-      var reg=await navigator.serviceWorker.register("firebase-messaging-sw.js");
-      var messaging=firebase.messaging();
-      var token=await messaging.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});
-      if(!token){pushErr("토큰","토큰이 비어서 왔어요");return;}
-      saveToken(token);setPushBtn(true);toast("알림이 켜졌어요 🔔");
+      var reg=await navigator.serviceWorker.register("sw.js");
+      await navigator.serviceWorker.ready;
+      var sub=await reg.pushManager.getSubscription();
+      if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToUint8Array(VAPID_PUBLIC)});
+      saveSub(sub);setPushBtn(true);toast("알림이 켜졌어요 🔔");
       try{localStorage.setItem(KEY+"-push","1");}catch(e){}
-      try{messaging.onMessage(function(p){var n=(p&&(p.notification||p.data))||{};toast((n.title||"알림")+(n.body?" — "+n.body:""));});}catch(e){}
     }catch(e){ pushErr("알림설정",e); }
   }
   function pushInit(){
@@ -774,9 +771,8 @@ var GROUP_ID = "gongchineunsai"; // 모임 구분용 방 이름 (그대로 두�
     var granted=("Notification" in window)&&Notification.permission==="granted";
     setPushBtn(want&&granted);
     if(want&&granted&&mode==="cloud"&&pushSupported()){
-      navigator.serviceWorker.register("firebase-messaging-sw.js").then(function(reg){
-        firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}).then(function(t){if(t)saveToken(t);}).catch(function(){});
-      }).catch(function(){});
+      navigator.serviceWorker.register("sw.js").then(function(reg){return reg.pushManager.getSubscription();})
+        .then(function(sub){if(sub)saveSub(sub);}).catch(function(){});
     }
   }
   document.getElementById("pushBtn").addEventListener("click",enablePush);
