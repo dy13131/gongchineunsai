@@ -775,7 +775,19 @@ var GROUP_ID = "gongchineunsai"; // 모임 구분용 방 이름 (그대로 두�
         .then(function(sub){if(sub)saveSub(sub);}).catch(function(){});
     }
   }
-  document.getElementById("pushBtn").addEventListener("click",enablePush);
+  async function disablePush(){
+    try{try{localStorage.removeItem(KEY+"-push");}catch(e){}
+      if("serviceWorker" in navigator){var reg=await navigator.serviceWorker.getRegistration();
+        if(reg){var sub=await reg.pushManager.getSubscription();
+          if(sub){var j=sub.toJSON?sub.toJSON():sub;try{await sub.unsubscribe();}catch(e){}
+            if(mode==="cloud"&&dbref&&j&&j.endpoint)dbref.child("pushSubs/"+subKey(j.endpoint)).remove();}}}
+    }catch(e){}
+    setPushBtn(false);toast("알림을 껐어요 🔕");
+  }
+  document.getElementById("pushBtn").addEventListener("click",function(){
+    if(document.getElementById("pushBtn").classList.contains("push-on")) disablePush();
+    else enablePush();
+  });
 
   setTab("record");
   render();
