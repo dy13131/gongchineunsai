@@ -1,3 +1,4 @@
+/* 공치는사이 — 정기 모임 웹푸시 발송 (GitHub Actions에서 매일 실행) */
 const webpush = require('web-push');
 
 const DB = (process.env.DB_URL || "https://tennis-534af-default-rtdb.firebaseio.com").replace(/\/$/, "");
@@ -86,4 +87,8 @@ async function main(){
         }
       }
     }
-    console.log("발송:",
+    console.log("발송:", msg.body, "-", ok + "/" + entries.length, "성공");
+  }
+}
+
+main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
